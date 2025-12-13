@@ -26,13 +26,13 @@ RPS Arena tái hiện trò chơi Kéo–Búa–Bao dưới dạng Web3 Game, nơ
 
 Người chơi:
 
-Đặt cược bằng token GGC
+- Đặt cược bằng token GGC
 
-Sử dụng thẻ bài Rock / Paper / Scissors
+- Sử dụng thẻ bài Rock / Paper / Scissors
 
-Thắng để nhận thưởng, thua sẽ mất cược
+- Thắng để nhận thưởng, thua sẽ mất cược
 
-Mở khóa và giao dịch skin NFT mang tính thẩm mỹ
+- Mở khóa và giao dịch skin NFT mang tính thẩm mỹ
 
 🪙 In-game Token – GGC (GitGud Coin)
 
@@ -44,79 +44,79 @@ GGC là token chính trong hệ sinh thái RPS Arena, được dùng để:
 
 🎰 Quay gacha skin NFT
 
-Token economy được thiết kế đơn giản, minh bạch và dễ mở rộng.
+👉 Token economy được thiết kế đơn giản, minh bạch và dễ mở rộng.
 
 🎴 NFT Card System
 
-Mỗi người chơi mặc định sở hữu 1 bộ bài gồm 3 thẻ:
+- Mỗi người chơi mặc định sở hữu 1 bộ bài gồm 3 thẻ:
 
-Rock
+- 👊 Rock
+ 
+- 📄 Paper
 
-Paper
+- ✂ Scissors
 
-Scissors
-
-Bộ bài mặc định không có skin, đảm bảo công bằng
+ 👌 Bộ bài mặc định không có skin, đảm bảo công bằng
 
 Skin NFT:
 
-Chỉ mang tính thẩm mỹ
+- Chỉ mang tính thẩm mỹ
 
-Có độ hiếm khác nhau
+- Có độ hiếm khác nhau
 
-Không ảnh hưởng đến kết quả thắng/thua
+- Không ảnh hưởng đến kết quả thắng/thua
 
 ⚔️ Gameplay Flow
 🧠 Player vs Computer (AI)
 
-Kết nối ví
+- Kết nối ví
 
-Chọn mức cược (có thể điều chỉnh / đang phát triển)
+- Chọn mức cược (có thể điều chỉnh / đang phát triển)
 
-Chọn thẻ bài Rock / Paper / Scissors
+- Chọn thẻ bài Rock / Paper / Scissors
 
-AI chọn ngẫu nhiên
+- AI chọn ngẫu nhiên
 
-So sánh kết quả:
+- So sánh kết quả:
 
-✅ Thắng → Nhận GGC
+- ✅ Thắng → Nhận GGC
 
-❌ Thua → Mất GGC đã cược
+- ❌ Thua → Mất GGC đã cược
 
 👥 Player vs Player (Future)
 
-Đấu trực tiếp với người chơi khác
+- Đấu trực tiếp với người chơi khác
 
-Có thể mở rộng:
+- Có thể mở rộng:
 
-Matchmaking
+- Matchmaking
 
-Ranked mode
+- Ranked mode
 
-Tournament
+- Tournament
 
 🎰 Gacha Skin NFT
 
-Người chơi sử dụng GGC để quay gacha
+- Người chơi sử dụng GGC để quay gacha
 
-Nhận skin NFT cho Rock / Paper / Scissors
+- Nhận skin NFT cho Rock / Paper / Scissors
 
 Skin có:
 
-Độ hiếm khác nhau
+- Độ hiếm khác nhau
 
-Thiết kế hình ảnh & hiệu ứng riêng
+- Thiết kế hình ảnh & hiệu ứng riêng
 
 Người chơi có thể:
 
-Trang bị skin trước khi vào trận
+- Trang bị skin trước khi vào trận
 
-Bán / trao đổi trên marketplace
+- Bán / trao đổi trên marketplace
 
 🛒 NFT Marketplace (Roadmap)
 
-Marketplace phi tập trung
+- Marketplace phi tập trung
 
-Giao dịch peer-to-peer
+- Giao dịch peer-to-peer
 
-Người chơi toàn quyền định giá tài sản
+- Người chơi toàn quyền định giá tài sản
