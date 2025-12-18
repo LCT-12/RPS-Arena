@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import {
   ConnectButton,
   useCurrentAccount,
@@ -6,28 +5,28 @@ import {
   useSuiClient,
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
+import { useEffect, useState } from 'react';
+import {
+  POOL_DATA_ID,
+  MODULE_NAME,
+  PACKAGE_ID,
+  TREASURY_CAP_ID,
+  FAUCET_DATA_ID,
+} from './constants';
 import { useGGCBalance } from './hooks/useGGCBalance';
-
-// Move module configuration
-const TREASURY_CAP_ID =
-  '0x92b8d0bdd87b2aefecb694dae9e621bf79a176be286294ae1b297f4ec4343b33';
-const PACKAGE_ID =
-  '0x4d21dfddf16121831decde8457856f41060d7ec43ee2d6bd2778703535d5e063';
-const MODULE_NAME = 'ggc';
-const HOUSE_OBJECT_ID =
-  '0x2e22048c933eb925e9ab03159f34ebd95160eb3634f7f8602937300caa920185';
+import { toast } from 'sonner';
 
 type Choice = 'rock' | 'paper' | 'scissors';
 type GameResult = 'win' | 'lose' | 'draw' | null;
 
 const CHOICES = {
+  scissors: '✌️',
   rock: '👊',
   paper: '✋',
-  scissors: '✌️',
 };
 
 export default function RockPaperScissorsGame() {
-  const account = useCurrentAccount();
+  const account = useCurrentAccount()!;
   const client = useSuiClient();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction({
     execute: async ({ bytes, signature }) =>
@@ -42,6 +41,7 @@ export default function RockPaperScissorsGame() {
       }),
   });
   const { data: balance, refetch: refetchBalance } = useGGCBalance();
+  const [poolBalance, setPoolBalance] = useState<number>(0);
 
   const [playerChoice, setPlayerChoice] = useState<Choice | null>(null);
   const [botChoice, setBotChoice] = useState<Choice | null>(null);
@@ -49,6 +49,31 @@ export default function RockPaperScissorsGame() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [scores, setScores] = useState({ player: 0, bot: 0, draws: 0 });
+
+  // Fetch pool balance
+  const fetchPoolBalance = async () => {
+    try {
+      const poolObject = await client.getObject({
+        id: POOL_DATA_ID,
+        options: { showContent: true },
+      });
+
+      if (poolObject.data?.content?.dataType === 'moveObject') {
+        const fields = poolObject.data.content.fields as any;
+        const balance = parseInt(fields.balance || '0') / 1_000_000_000;
+        setPoolBalance(balance);
+      } else {
+        setPoolBalance(0);
+      }
+    } catch (error) {
+      console.error('Error fetching pool balance:', error);
+      setPoolBalance(0);
+    }
+  };
+
+  useEffect(() => {
+    fetchPoolBalance();
+  }, [client]);
 
   const getRandomChoice = (): Choice => {
     const choices: Choice[] = ['rock', 'paper', 'scissors'];
@@ -83,9 +108,9 @@ export default function RockPaperScissorsGame() {
     tx.moveCall({
       target: `${PACKAGE_ID}::${MODULE_NAME}::payout`,
       arguments: [
-        tx.object(HOUSE_OBJECT_ID),
+        tx.object(POOL_DATA_ID),
         tx.object(TREASURY_CAP_ID),
-        tx.pure.address(HOUSE_OBJECT_ID), // Payment goes to house first
+        tx.pure.address(POOL_DATA_ID), // Payment goes to house first
       ],
     });
 
@@ -117,7 +142,7 @@ export default function RockPaperScissorsGame() {
               payoutTx.moveCall({
                 target: `${PACKAGE_ID}::${MODULE_NAME}::payout`,
                 arguments: [
-                  payoutTx.object(HOUSE_OBJECT_ID),
+                  payoutTx.object(POOL_DATA_ID),
                   payoutTx.object(TREASURY_CAP_ID),
                   payoutTx.pure.address(account.address),
                 ],
@@ -174,6 +199,107 @@ export default function RockPaperScissorsGame() {
     return 'Rock, Paper, Scissors?';
   };
 
+  const claimGGC = () => {
+    const tx = new Transaction();
+    tx.moveCall({
+      target: `${PACKAGE_ID}::${MODULE_NAME}::claim_faucet`,
+      arguments: [
+        tx.object(FAUCET_DATA_ID),
+        tx.object(TREASURY_CAP_ID),
+        tx.object('0x6'),
+      ],
+    });
+    signAndExecute(
+      { transaction: tx },
+      {
+        onSuccess: () => {
+          console.log('GGC claimed successfully');
+          setTimeout(refetchBalance, 1000);
+        },
+        onError: (err) => {
+          console.error('GGC claim failed', err);
+        },
+      }
+    );
+  };
+
+  const depositToPool = () => {
+    const tx = new Transaction();
+    tx.moveCall({
+      target: `${PACKAGE_ID}::${MODULE_NAME}::deposit_to_pool`,
+      arguments: [tx.object(POOL_DATA_ID), tx.object(TREASURY_CAP_ID)],
+    });
+    signAndExecute(
+      { transaction: tx },
+      {
+        onSuccess: () => {
+          console.log('Deposit successful');
+          setTimeout(refetchBalance, 1000);
+        },
+        onError: (err) => {
+          console.error('Deposit failed', err);
+        },
+      }
+    );
+  };
+
+  const play = async (choice: number) => {
+    const tx = new Transaction();
+    const BET_AMOUNT = 10;
+    const MIST = 1_000_000_000;
+
+    // Lấy tất cả coin GGC của player
+    const { data: coins } = await client.getCoins({
+      owner: account.address,
+      coinType: PACKAGE_ID + '::ggc::GGC',
+    });
+
+    if (coins.length === 0 || parseFloat(balance || '0') < BET_AMOUNT) {
+      toast.error('Không đủ GGC trong ví!');
+      setIsProcessing(false);
+      return;
+    }
+
+    // Merge tất cả coin GGC thành 1 coin lớn nếu có nhiều
+    let primaryCoin = coins[0].coinObjectId;
+    if (coins.length > 1) {
+      tx.mergeCoins(
+        primaryCoin,
+        coins.slice(1).map((c) => c.coinObjectId)
+      );
+    }
+
+    // Split đúng số lượng bet từ coin GGC
+    const [betCoin] = tx.splitCoins(primaryCoin, [BET_AMOUNT * MIST]);
+
+    tx.moveCall({
+      target: `${PACKAGE_ID}::${MODULE_NAME}::play`,
+      arguments: [
+        tx.object(POOL_DATA_ID),
+        betCoin,
+        tx.pure.u8(choice),
+        tx.object('0x8'), // Random object
+      ],
+    });
+    signAndExecute(
+      { transaction: tx },
+      {
+        onSuccess: (res) => {
+          console.log(res.events);
+          const result = res.events?.find(
+            (e) => e.type === `${PACKAGE_ID}::${MODULE_NAME}::GameResult`
+          );
+          const payload = result?.parsedJson as { outcome: number };
+          toast.success(payload.outcome);
+          setTimeout(refetchBalance, 1000);
+        },
+        onError: (err) => {
+          console.error('Deposit failed', err);
+        },
+      }
+    );
+  };
+
   return (
     <div className="flex justify-center items-center bg-gradient-to-br from-purple-600 to-blue-600 p-4 min-h-screen">
       <div
@@ -212,7 +338,7 @@ export default function RockPaperScissorsGame() {
             {(Object.keys(CHOICES) as Choice[]).map((choice) => (
               <button
                 key={choice}
-                onClick={() => payAndPlay(choice)}
+                onClick={() => play(0)}
                 disabled={isProcessing || !account || showModal}
                 className={`
                 bg-gradient-to-br from-purple-500 to-pink-500 
@@ -242,7 +368,16 @@ export default function RockPaperScissorsGame() {
         ) : (
           <div className="flex justify-between items-center mt-6 p-4 rounded-lg text-white text-center">
             <ConnectButton />
-            <div className="font-semibold">{balance} GGC</div>
+            <div className="space-x-4">
+              <span className="font-semibold">{balance} GGC</span>
+              <button className="p-4 outline" onClick={claimGGC}>
+                Claim GGC
+              </button>
+            </div>
+            <div className="">House balance: {poolBalance} GGC</div>
+            <button className="p-4 outline" onClick={depositToPool}>
+              Bố thí
+            </button>
           </div>
         )}
 

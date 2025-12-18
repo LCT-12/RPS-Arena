@@ -2,10 +2,7 @@
 
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
-
-// Make sure you import your actual PACKAGE_ID
-const PACKAGE_ID =
-  '0x4d21dfddf16121831decde8457856f41060d7ec43ee2d6bd2778703535d5e063';
+import { PACKAGE_ID } from '../constants';
 
 // The Coin Type for your module 'ggc' and witness 'GGC'
 const GGC_COIN_TYPE = `${PACKAGE_ID}::ggc::GGC`;
