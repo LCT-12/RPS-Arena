@@ -12,6 +12,7 @@ import {
   PACKAGE_ID,
   TREASURY_CAP_ID,
   FAUCET_DATA_ID,
+  ADMIN_ADDRESS,
 } from './constants';
 import { useGGCBalance } from './hooks/useGGCBalance';
 import { toast } from 'sonner';
@@ -98,6 +99,7 @@ export default function RockPaperScissorsGame() {
   });
 
   const [poolBalance, setPoolBalance] = useState<number>(0);
+  const [faucetBalance, setFaucetBalance] = useState<number>(0);
   const [playerChoice, setPlayerChoice] = useState<Choice | null>(null);
   const [botChoice, setBotChoice] = useState<Choice | null>(null);
   const [result, setResult] = useState<GameResult>(null);
@@ -108,34 +110,45 @@ export default function RockPaperScissorsGame() {
   const currentBalance = parseFloat(balance || '0');
   const hasEnoughBalance = currentBalance >= betAmount;
 
+  const isAdmin = account?.address === ADMIN_ADDRESS;
+
   // --- Helpers ---
   const refreshData = async () => {
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => setTimeout(r, 1000));
-      fetchPoolBalance();
+      fetchSystemBalances();
       refetchBalance();
     }
   };
 
-  const fetchPoolBalance = async () => {
+  const fetchSystemBalances = async () => {
     try {
-      const poolObject = await client.getObject({
-        id: POOL_DATA_ID,
-        options: { showContent: true },
-      });
+      const [poolObj, faucetObj] = await Promise.all([
+        client.getObject({ id: POOL_DATA_ID, options: { showContent: true } }),
+        client.getObject({
+          id: FAUCET_DATA_ID,
+          options: { showContent: true },
+        }),
+      ]);
 
-      if (poolObject.data?.content?.dataType === 'moveObject') {
-        const fields = poolObject.data.content.fields as any;
+      if (poolObj.data?.content?.dataType === 'moveObject') {
+        const fields = poolObj.data.content.fields as any;
         const raw = fields.balance?.value || fields.balance || '0';
         setPoolBalance(parseInt(raw) / 1_000_000_000);
       }
+
+      if (faucetObj.data?.content?.dataType === 'moveObject') {
+        const fields = faucetObj.data.content.fields as any;
+        const raw = fields.balance?.value || fields.balance || '0';
+        setFaucetBalance(parseInt(raw) / 1_000_000_000);
+      }
     } catch (error) {
-      console.error('Error fetching pool balance:', error);
+      console.error('Error fetching system balances:', error);
     }
   };
 
   useEffect(() => {
-    fetchPoolBalance();
+    fetchSystemBalances();
   }, [client]);
 
   const resetGame = () => {
@@ -152,8 +165,7 @@ export default function RockPaperScissorsGame() {
       target: `${PACKAGE_ID}::${MODULE_NAME}::claim_faucet`,
       arguments: [
         tx.object(FAUCET_DATA_ID),
-        tx.object(TREASURY_CAP_ID),
-        tx.object('0x6'),
+        tx.object('0x6'), // Clock
       ],
     });
 
@@ -178,11 +190,30 @@ export default function RockPaperScissorsGame() {
     signAndExecute(
       { transaction: tx },
       {
-        onSuccess: () => {
-          setTimeout(refetchBalance, 1000);
-          fetchPoolBalance();
-        },
-        onError: (err) => console.error('Deposit failed', err),
+        onSuccess: refreshData,
+        onError: (err) => toast.error('Deposit failed: ' + err.message),
+      }
+    );
+  };
+
+  const fillFaucet = () => {
+    const tx = new Transaction();
+    const AMOUNT_TO_FILL = 1000 * 1_000_000_000;
+
+    tx.moveCall({
+      target: `${PACKAGE_ID}::${MODULE_NAME}::fill_faucet`,
+      arguments: [
+        tx.object(FAUCET_DATA_ID),
+        tx.object(TREASURY_CAP_ID),
+        tx.pure.u64(AMOUNT_TO_FILL),
+      ],
+    });
+
+    signAndExecute(
+      { transaction: tx },
+      {
+        onSuccess: refreshData,
+        onError: (err) => toast.error('Fill failed: ' + err.message),
       }
     );
   };
@@ -280,7 +311,7 @@ export default function RockPaperScissorsGame() {
     if (result === 'win') return 'bg-green-600';
     if (result === 'lose') return 'bg-red-600';
     if (result === 'draw') return 'bg-yellow-600';
-    return 'bg-gray-800'; // Default Neutral
+    return 'bg-gray-800';
   };
 
   const getHeaderText = () => {
@@ -301,201 +332,270 @@ export default function RockPaperScissorsGame() {
 
   return (
     <div className="flex justify-center items-center bg-gray-900 p-4 min-h-screen font-sans">
+      {/* GRID CONTAINER: Side-by-Side Layout */}
       <div
-        className={`${getResultColor()} shadow-2xl rounded-3xl w-full max-w-xl relative transition-all duration-500 overflow-hidden border border-white/10`}
+        className={`grid grid-cols-1 ${
+          isAdmin
+            ? 'md:grid-cols-[1fr_1.5fr]'
+            : 'md:grid-cols-1 justify-items-center'
+        } gap-8 w-full max-w-6xl`}
       >
-        {/* Header / Result Area */}
-        <div className="z-10 relative p-8 text-white text-center">
-          {/* --- HOUSE BALANCE DISPLAY --- */}
-          <div className="top-4 left-0 absolute w-full text-center">
-            <span className="bg-black/40 backdrop-blur-md px-3 py-1 border border-white/5 rounded-full font-mono text-[10px] text-white/40">
-              HOUSE POOL:{' '}
-              <span className="text-white">
-                {poolBalance.toLocaleString()} GGC
-              </span>
-            </span>
-          </div>
+        {/* --- LEFT COLUMN: ADMIN DASHBOARD --- */}
+        {isAdmin && (
+          <div className="relative bg-gray-800 shadow-2xl p-8 border border-purple-500/30 rounded-3xl w-full h-fit overflow-hidden">
+            <div className="top-0 left-0 absolute bg-gradient-to-r from-purple-500 to-pink-500 w-full h-1"></div>
+            <h3 className="flex items-center gap-2 mb-6 font-black text-white text-2xl uppercase tracking-widest">
+              🛡️ Admin Panel
+            </h3>
 
-          {/* Bet Mode Selector */}
-          {!result && !isProcessing && (
-            <div className="flex justify-center mt-6 mb-6">
-              <div className="flex bg-black/40 backdrop-blur-sm p-1 border border-white/5 rounded-xl">
-                {BET_OPTIONS.map((amount) => (
-                  <button
-                    key={amount}
-                    onClick={() => setBetAmount(amount)}
-                    className={`
-                                px-4 py-2 rounded-lg text-sm font-bold transition-all
-                                ${
-                                  betAmount === amount
-                                    ? 'bg-white text-gray-900 shadow-lg scale-105'
-                                    : 'text-white/50 hover:text-white'
-                                }
-                            `}
-                  >
-                    {amount}
-                  </button>
-                ))}
+            <div className="space-y-6">
+              {/* Status Cards */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-end bg-black/40 p-6 border border-white/5 rounded-2xl">
+                  <div>
+                    <div className="mb-1 font-bold text-white/40 text-xs uppercase">
+                      House Pool
+                    </div>
+                    <div className="font-mono font-bold text-white text-3xl tracking-tight">
+                      {poolBalance.toLocaleString()}
+                    </div>
+                  </div>
+                  <img
+                    src="coin.png"
+                    className="size-9"
+                    width={18}
+                    height={18}
+                  />
+                </div>
+
+                <div className="flex justify-between items-end bg-black/40 p-6 border border-white/5 rounded-2xl">
+                  <div>
+                    <div className="mb-1 font-bold text-white/40 text-xs uppercase">
+                      Faucet Tank
+                    </div>
+                    <div className="font-mono font-bold text-white text-3xl tracking-tight">
+                      {faucetBalance.toLocaleString()}
+                    </div>
+                  </div>
+                  <img
+                    src="coin.png"
+                    className="size-9"
+                    width={18}
+                    height={18}
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="gap-4 grid grid-cols-1 pt-4 border-white/5 border-t">
+                <button
+                  onClick={depositToPool}
+                  className="bg-purple-600 hover:bg-purple-500 shadow-lg hover:shadow-purple-500/20 py-4 rounded-xl font-bold text-white text-sm uppercase tracking-wider transition-all"
+                >
+                  ⚡ Refill House (1000 GGC)
+                </button>
+                <button
+                  onClick={fillFaucet}
+                  className="bg-pink-600 hover:bg-pink-500 shadow-lg hover:shadow-pink-500/20 py-4 rounded-xl font-bold text-white text-sm uppercase tracking-wider transition-all"
+                >
+                  💧 Refill Faucet (1000 GGC)
+                </button>
               </div>
             </div>
-          )}
-
-          {/* Main Title */}
-          <div className="flex flex-col justify-center items-center gap-2 mb-8 h-32">
-            <h2 className="drop-shadow-md font-black text-4xl md:text-6xl uppercase tracking-tighter animate-in duration-300 fade-in zoom-in">
-              {getHeaderText()}
-            </h2>
-            <p className="font-medium text-white/80 text-xl tracking-wide">
-              {getSubHeaderText()}
-            </p>
           </div>
+        )}
 
-          {/* Battle Arena */}
-          <div className="flex justify-between items-center mb-8 px-4 w-full">
-            <div className="flex flex-col items-center w-1/3 transition-all duration-300">
-              <div className="text-7xl">
-                {playerChoice ? CHOICES[playerChoice] : '❓'}
+        {/* --- RIGHT COLUMN: GAME CARD --- */}
+        <div
+          className={`${getResultColor()} shadow-2xl rounded-3xl w-full max-w-xl relative transition-all duration-500 overflow-hidden border border-white/10`}
+        >
+          {/* Header / Result Area */}
+          <div className="z-10 relative p-8 text-white text-center">
+            {/* Bet Mode Selector */}
+            {!result && !isProcessing && (
+              <div className="flex flex-col items-center mt-2 mb-6">
+                <span className="mb-2 font-bold text-[10px] text-white/40 uppercase tracking-widest">
+                  Stake Amount
+                </span>
+                <div className="flex bg-black/40 backdrop-blur-sm p-1 border border-white/5 rounded-xl">
+                  {BET_OPTIONS.map((amount) => (
+                    <button
+                      key={amount}
+                      onClick={() => setBetAmount(amount)}
+                      className={`
+                        px-4 py-2 rounded-lg text-sm font-bold transition-all min-w-[80px]
+                        ${
+                          betAmount === amount
+                            ? 'bg-yellow-400 text-black shadow-lg scale-105'
+                            : 'text-white/40 hover:text-white hover:bg-white/5'
+                        }
+                      `}
+                    >
+                      {amount}{' '}
+                      <span className="opacity-60 text-[10px]">GGC</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <span className="bg-white/10 mt-4 px-3 py-1 rounded-full font-bold text-[10px] text-white/60 uppercase tracking-widest">
-                You
-              </span>
+            )}
+
+            {/* Main Title */}
+            <div className="flex flex-col justify-center items-center gap-2 mb-8 h-32">
+              <h2 className="drop-shadow-md font-black text-4xl md:text-6xl uppercase tracking-tighter animate-in duration-300 fade-in zoom-in">
+                {getHeaderText()}
+              </h2>
+              <p className="font-medium text-white/80 text-xl tracking-wide">
+                {getSubHeaderText()}
+              </p>
             </div>
 
-            <div className="w-1/3 font-black text-white/20 text-4xl italic">
-              VS
-            </div>
-
-            <div className="flex flex-col items-center w-1/3 transition-all duration-300">
-              <div
-                className={`text-7xl ${isProcessing ? 'animate-bounce' : ''}`}
-              >
-                {botChoice ? CHOICES[botChoice] : '🤖'}
+            {/* Battle Arena */}
+            <div className="flex justify-between items-center mb-8 px-4 w-full">
+              <div className="flex flex-col items-center w-1/3 transition-all duration-300">
+                <div className="text-7xl">
+                  {playerChoice ? CHOICES[playerChoice] : '❓'}
+                </div>
+                <span className="bg-white/10 mt-4 px-3 py-1 rounded-full font-bold text-[10px] text-white/60 uppercase tracking-widest">
+                  You
+                </span>
               </div>
-              <span className="bg-white/10 mt-4 px-3 py-1 rounded-full font-bold text-[10px] text-white/60 uppercase tracking-widest">
-                Bot
-              </span>
-            </div>
-          </div>
 
-          {/* Controls */}
-          <div className="mt-8 h-24">
-            {result ? (
-              <button
-                onClick={resetGame}
-                className="slide-in-from-bottom-4 bg-white hover:bg-gray-100 shadow-xl hover:shadow-2xl py-4 rounded-2xl w-full font-black text-gray-900 text-xl uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all animate-in transform"
-              >
-                Play Again
-              </button>
-            ) : (
-              <div className="gap-4 grid grid-cols-3">
-                {(Object.keys(CHOICES) as Choice[]).map((choice) => (
-                  <button
-                    key={choice}
-                    onClick={() => play(choice)}
-                    disabled={isProcessing || !account || !hasEnoughBalance}
-                    className={`
-                        bg-black/20 
-                        rounded-2xl p-4 text-5xl
-                        border-2 border-transparent hover:border-white/20
-                        transition-all duration-200
-                        shadow-lg
-                        hover:bg-black/40 hover:scale-110 active:scale-90
-                        disabled:opacity-50 
-                        disabled:cursor-not-allowed
-                        disabled:transform-none
-                        disabled:hover:scale-100
-                        disabled:active:scale-100
-                        disabled:hover:bg-black/20
-                    `}
-                  >
-                    {CHOICES[choice]}
-                  </button>
-                ))}
+              <div className="w-1/3 font-black text-white/20 text-4xl italic">
+                VS
+              </div>
+
+              <div className="flex flex-col items-center w-1/3 transition-all duration-300">
+                <div
+                  className={`text-7xl ${isProcessing ? 'animate-bounce' : ''}`}
+                >
+                  {botChoice ? CHOICES[botChoice] : '🤖'}
+                </div>
+                <span className="bg-white/10 mt-4 px-3 py-1 rounded-full font-bold text-[10px] text-white/60 uppercase tracking-widest">
+                  Bot
+                </span>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="mt-8 h-24">
+              {result ? (
+                <button
+                  onClick={resetGame}
+                  className="slide-in-from-bottom-4 bg-white hover:bg-gray-100 shadow-xl hover:shadow-2xl py-4 rounded-2xl w-full font-black text-gray-900 text-xl uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all animate-in transform"
+                >
+                  Play Again
+                </button>
+              ) : (
+                <div className="gap-4 grid grid-cols-3">
+                  {(Object.keys(CHOICES) as Choice[]).map((choice) => (
+                    <button
+                      key={choice}
+                      onClick={() => play(choice)}
+                      disabled={isProcessing || !account || !hasEnoughBalance}
+                      className={`
+                            bg-black/20 
+                            rounded-2xl p-4 text-5xl
+                            border-2 border-transparent hover:border-white/20
+                            transition-all duration-200
+                            shadow-lg
+                            hover:bg-black/40 hover:scale-110 active:scale-90
+                            disabled:opacity-50 
+                            disabled:cursor-not-allowed
+                            disabled:transform-none
+                            disabled:hover:scale-100
+                            disabled:active:scale-100
+                            disabled:hover:bg-black/20
+                        `}
+                    >
+                      {CHOICES[choice]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {!hasEnoughBalance && account && !result && (
+              <div className="mt-4 font-bold text-red-300 text-sm animate-pulse">
+                Insufficient Balance! You need {betAmount} GGC.
               </div>
             )}
           </div>
 
-          {!hasEnoughBalance && account && !result && (
-            <div className="mt-4 font-bold text-red-300 text-sm animate-pulse">
-              Insufficient Balance! You need {betAmount} GGC.
-            </div>
-          )}
-        </div>
-
-        {/* Footer Stats */}
-        <div className="bg-black/40 backdrop-blur-md p-6 border-white/5 border-t text-white">
-          {!account ? (
-            <div className="flex flex-col items-center gap-4">
-              <p className="opacity-80 font-medium">Connect wallet to start</p>
-              <ConnectButton />
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <ConnectButton />
-                  <div className="relative flex flex-col pl-2">
-                    <span className="font-bold text-[10px] text-white/50 uppercase">
-                      Your Balance
-                    </span>
-
-                    <div className="relative">
-                      <span
-                        className={`flex gap-2 items-center
-                                font-mono font-bold transition-colors duration-300
-                                ${
-                                  !hasEnoughBalance
-                                    ? 'text-red-400'
-                                    : 'text-emerald-400'
-                                }
-                            `}
-                      >
-                        {balance ?? '0.00'}
-                        <img
-                          src="coin.png"
-                          className="size-5"
-                          width={18}
-                          height={18}
-                        />
+          {/* Footer Stats */}
+          <div className="bg-black/40 backdrop-blur-md p-6 border-white/5 border-t text-white">
+            {!account ? (
+              <div className="flex flex-col items-center gap-4">
+                <p className="opacity-80 font-medium">
+                  Connect wallet to start
+                </p>
+                <ConnectButton />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <ConnectButton />
+                    <div className="relative flex flex-col pl-2">
+                      <span className="font-bold text-[10px] text-white/50 uppercase">
+                        Your Balance
                       </span>
 
-                      {/* Animation Component */}
-                      <BalanceDelta currentBalance={currentBalance} />
+                      <div className="relative">
+                        <span
+                          className={`flex gap-2 items-center
+                                    font-mono font-bold transition-colors duration-300
+                                    ${
+                                      !hasEnoughBalance
+                                        ? 'text-red-400'
+                                        : 'text-emerald-400'
+                                    }
+                                `}
+                        >
+                          {balance ?? '0.00'}
+                          <img
+                            src="coin.png"
+                            className="size-5"
+                            width={18}
+                            height={18}
+                          />
+                        </span>
+                        <BalanceDelta currentBalance={currentBalance} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={claimGGC}
+                      className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold text-xs transition-colors"
+                    >
+                      + Faucet
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between pt-4 border-white/10 border-t">
+                  <div className="text-center">
+                    <div className="font-bold text-xl">{scores.player}</div>
+                    <div className="text-[10px] text-white/40 uppercase">
+                      Wins
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="font-bold text-xl">{scores.draws}</div>
+                    <div className="text-[10px] text-white/40 uppercase">
+                      Draws
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="font-bold text-xl">{scores.bot}</div>
+                    <div className="text-[10px] text-white/40 uppercase">
+                      Losses
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={claimGGC}
-                    className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold text-xs transition-colors"
-                  >
-                    + Faucet
-                  </button>
-                </div>
               </div>
-
-              <div className="flex justify-between pt-4 border-white/10 border-t">
-                <div className="text-center">
-                  <div className="font-bold text-xl">{scores.player}</div>
-                  <div className="text-[10px] text-white/40 uppercase">
-                    Wins
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="font-bold text-xl">{scores.draws}</div>
-                  <div className="text-[10px] text-white/40 uppercase">
-                    Draws
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="font-bold text-xl">{scores.bot}</div>
-                  <div className="text-[10px] text-white/40 uppercase">
-                    Losses
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

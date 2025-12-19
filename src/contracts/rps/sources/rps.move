@@ -35,6 +35,7 @@ const PAPER: u8 = 2;
 // Faucet Data
 public struct FaucetData has key {
     id: UID,
+    balance: Balance<GGC>,
     claims: Table<address, FaucetClaim>,
 }
 
@@ -85,25 +86,23 @@ fun init(witness: GGC, ctx: &mut TxContext) {
 
     // Tạo FaucetData
     transfer::share_object(FaucetData {
-    id: object::new(ctx),
-    claims: table::new(ctx),
+        id: object::new(ctx),
+        balance: balance::zero(),
+        claims: table::new(ctx),
     });
 }
 
 /// Player claim 100 GGC - giới hạn 5 lần/ngày, cách nhau ít nhất 2 phút
 public entry fun claim_faucet(
     faucet: &mut FaucetData,
-    cap: &mut TreasuryCap<GGC>,
-    clock: &Clock,
+    clock: &Clock, 
     ctx: &mut TxContext
 ) {
     let player = tx_context::sender(ctx);
     let now_ms = clock::timestamp_ms(clock);
+    let current_day = now_ms / 86_400_000;
 
-    // Tính ngày hiện tại (chỉ lấy ngày, bỏ giờ/phút/giây)
-    let current_day = now_ms / 86_400_000; // 1 ngày = 86,400,000 ms
-
-    // Nếu chưa có record thì tạo mới
+    // --- 1. Initialize Record if needed ---
     if (!table::contains(&faucet.claims, player)) {
         table::add(&mut faucet.claims, player, FaucetClaim {
             last_claim_date: 0,
@@ -114,25 +113,42 @@ public entry fun claim_faucet(
 
     let claim_record = table::borrow_mut(&mut faucet.claims, player);
 
-    // Reset count nếu sang ngày mới
+    // --- 2. Reset daily logic ---
     if (claim_record.last_claim_date < current_day) {
         claim_record.daily_count = 0;
         claim_record.last_claim_date = current_day;
     };
 
-    // Check giới hạn 5 lần/ngày
-    assert!(claim_record.daily_count < FAUCET_MAX_PER_DAY, 1001);
+    // --- 3. Checks ---
+    assert!(claim_record.daily_count < FAUCET_MAX_PER_DAY, 1001); // Max 5
+    assert!(now_ms - claim_record.last_claim_timestamp >= FAUCET_MIN_INTERVAL_MS, 1002); // 2 mins
 
-    // Check khoảng cách 2 phút với lần claim trước
-    assert!(now_ms - claim_record.last_claim_timestamp >= FAUCET_MIN_INTERVAL_MS, 1002);
+    // --- 4. Withdraw Logic (CHANGED) ---
+    // Ensure faucet has enough funds
+    assert!(balance::value(&faucet.balance) >= FAUCET_AMOUNT, 1003);
 
-    // Mint và transfer 100 GGC
-    let coin = coin::mint(cap, FAUCET_AMOUNT, ctx);
+    // Take coins from the Shared Pool instead of minting
+    let split_balance = balance::split(&mut faucet.balance, FAUCET_AMOUNT);
+    let coin = coin::from_balance(split_balance, ctx);
+    
     transfer::public_transfer(coin, player);
 
-    // Update record
+    // --- 5. Update Record ---
     claim_record.daily_count = claim_record.daily_count + 1;
     claim_record.last_claim_timestamp = now_ms;
+}
+
+public entry fun fill_faucet(
+    faucet: &mut FaucetData,
+    cap: &mut TreasuryCap<GGC>, 
+    amount: u64,
+    ctx: &mut TxContext
+) {
+    // Admin mints coins using their Cap
+    let minted_coin = coin::mint(cap, amount, ctx);
+    
+    // Put them into the faucet's balance
+    balance::join(&mut faucet.balance, coin::into_balance(minted_coin));
 }
 
 // Admin deposit GGC vào pool
